@@ -1,0 +1,13 @@
+{
+  "id": "dzungngo179/xla-final-training",
+  "title": "XLA Final Training",
+  "code_file": "kaggle_train.ipynb",
+  "language": "python",
+  "kernel_type": "notebook",
+  "is_private": true,
+  "enable_gpu": true,
+  "enable_internet": true,
+  "dataset_sources": ["dzungngo179/xla-final-public"],
+  "competition_sources": [],
+  "kernel_sources": []
+}
