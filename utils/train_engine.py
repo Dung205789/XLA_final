@@ -6,7 +6,7 @@ import tempfile
 from typing import Optional
 
 import torch
-from torch.cuda.amp import GradScaler, autocast
+from torch.amp import GradScaler, autocast
 from tqdm import tqdm
 
 from .inference import run_inference
@@ -35,7 +35,7 @@ def train_one_epoch(
     for images, targets in pbar:
         images = images.to(device)
 
-        with autocast(enabled=device.type == "cuda"):
+        with autocast("cuda", enabled=device.type == "cuda"):
             predictions = model(images)
 
             batch_t = []
@@ -104,7 +104,7 @@ def training_loop(
     input_size: int = 512,
     val_every: int = 1,
 ):
-    scaler = GradScaler(enabled=device.type == "cuda")
+    scaler = GradScaler("cuda", enabled=device.type == "cuda")
     best_map = 0.0
     os.makedirs(checkpoint_dir, exist_ok=True)
 
