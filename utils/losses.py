@@ -1,10 +1,10 @@
-"""Detection losses: focal BCE (objectness), CE (class), GIoU+SmoothL1 (box)."""
+"""Detection losses: focal BCE (objectness), CE with class weights (class), CIoU (box)."""
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from .box_ops import decode_deltas, encode_deltas, giou_loss
+from .box_ops import ciou_loss, decode_deltas, encode_deltas
 
 
 class FocalBCE(nn.Module):
@@ -28,6 +28,7 @@ class DetectionLoss(nn.Module):
         lambda_obj: float = 1.0,
         lambda_cls: float = 1.0,
         lambda_box: float = 2.0,
+        cls_weights: torch.Tensor = None,
     ):
         super().__init__()
         self.num_classes = num_classes
@@ -35,6 +36,9 @@ class DetectionLoss(nn.Module):
         self.lambda_cls = lambda_cls
         self.lambda_box = lambda_box
         self.focal_bce = FocalBCE(alpha=0.25, gamma=2.0)
+        # Optional per-class weights to counter class imbalance
+        self.register_buffer("cls_weights", cls_weights if cls_weights is not None
+                             else torch.ones(num_classes))
 
     def forward(self, predictions, batch_targets: list, anchors: torch.Tensor):
         """
@@ -55,28 +59,29 @@ class DetectionLoss(nn.Module):
             cls_t = batch_targets[i]["cls_targets"].to(device)
             box_t = batch_targets[i]["box_targets"].to(device)
 
+            # ATSS produces no ignore zone: all anchors are either 0 or 1
+            # IoUAssigner might produce -1 (ignore); exclude those
             valid = obj_t >= 0
             pos = obj_t == 1
             num_pos += int(pos.sum())
 
-            # Objectness loss on all non-ignored anchors
             if valid.any():
                 l_obj = l_obj + self.focal_bce(
                     obj_logits[i, valid, 0], obj_t[valid].float()
                 )
 
             if pos.any():
-                # Classification loss on positives
-                l_cls = l_cls + F.cross_entropy(cls_logits[i, pos], cls_t[pos])
+                # Classification with class-frequency weights
+                l_cls = l_cls + F.cross_entropy(
+                    cls_logits[i, pos],
+                    cls_t[pos],
+                    weight=self.cls_weights.to(device),
+                )
 
-                # Box regression on positives
+                # Box regression: CIoU loss
                 anc_pos = anchors[pos]
                 pred_boxes = decode_deltas(anc_pos, box_preds[i, pos])
-                target_deltas = encode_deltas(anc_pos, box_t[pos])
-                l_box = l_box + (
-                    giou_loss(pred_boxes, box_t[pos]).mean()
-                    + 0.5 * F.smooth_l1_loss(box_preds[i, pos], target_deltas)
-                )
+                l_box = l_box + ciou_loss(pred_boxes, box_t[pos]).mean()
 
         l_obj = l_obj / B
         l_cls = l_cls / B

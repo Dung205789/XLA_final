@@ -33,7 +33,7 @@ def parse_args():
     p.add_argument("--output", default="predictions.json")
     p.add_argument("--checkpoint", default="./models/best.pth")
     p.add_argument("--anchor_cfg", default="./models/anchors.json")
-    p.add_argument("--conf_thresh", type=float, default=0.05)
+    p.add_argument("--conf_thresh", type=float, default=0.30)
     p.add_argument("--nms_thresh", type=float, default=0.5)
     p.add_argument("--input_size", type=int, default=512)
     p.add_argument("--batch_size", type=int, default=16)

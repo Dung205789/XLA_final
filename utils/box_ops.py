@@ -1,4 +1,6 @@
-"""Box geometry utilities: IoU, GIoU loss, delta encode/decode, clipping."""
+"""Box geometry utilities: IoU, GIoU/CIoU loss, delta encode/decode, clipping."""
+
+import math
 
 import torch
 import torch.nn.functional as F
@@ -95,6 +97,50 @@ def decode_deltas(anchors: torch.Tensor, deltas: torch.Tensor) -> torch.Tensor:
     h = torch.exp(th) * ah
 
     return torch.stack([cx - 0.5 * w, cy - 0.5 * h, cx + 0.5 * w, cy + 0.5 * h], dim=-1)
+
+
+def ciou_loss(pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+    """
+    CIoU loss element-wise — better convergence than GIoU for box regression.
+    pred, target: [N, 4] in [x1, y1, x2, y2]
+    Returns: [N]
+    """
+    px1, py1, px2, py2 = pred.unbind(-1)
+    tx1, ty1, tx2, ty2 = target.unbind(-1)
+
+    inter_w = (torch.min(px2, tx2) - torch.max(px1, tx1)).clamp(min=0)
+    inter_h = (torch.min(py2, ty2) - torch.max(py1, ty1)).clamp(min=0)
+    inter = inter_w * inter_h
+
+    pw = (px2 - px1).clamp(min=0)
+    ph = (py2 - py1).clamp(min=0)
+    tw = (tx2 - tx1).clamp(min=0)
+    th = (ty2 - ty1).clamp(min=0)
+    union = pw * ph + tw * th - inter
+    iou = inter / union.clamp(min=1e-6)
+
+    # Enclosing box diagonal squared
+    enc_x1 = torch.min(px1, tx1)
+    enc_y1 = torch.min(py1, ty1)
+    enc_x2 = torch.max(px2, tx2)
+    enc_y2 = torch.max(py2, ty2)
+    c2 = ((enc_x2 - enc_x1).pow(2) + (enc_y2 - enc_y1).pow(2)).clamp(min=1e-6)
+
+    # Center distance squared
+    pcx = (px1 + px2) / 2
+    pcy = (py1 + py2) / 2
+    tcx = (tx1 + tx2) / 2
+    tcy = (ty1 + ty2) / 2
+    d2 = (pcx - tcx).pow(2) + (pcy - tcy).pow(2)
+
+    # Aspect ratio consistency term
+    v = (4 / (math.pi ** 2)) * (
+        torch.atan(tw / th.clamp(min=1e-6)) - torch.atan(pw / ph.clamp(min=1e-6))
+    ).pow(2)
+    with torch.no_grad():
+        alpha_v = v / (1 - iou + v + 1e-6)
+
+    return 1.0 - iou + d2 / c2 + alpha_v * v
 
 
 def clip_boxes(boxes: torch.Tensor, size: int) -> torch.Tensor:

@@ -5,7 +5,7 @@ import math
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torchvision.models import resnet18, ResNet18_Weights
+from torchvision.models import resnet34, ResNet34_Weights
 
 
 class FPN(nn.Module):
@@ -70,9 +70,11 @@ class DetectionHead(nn.Module):
 
 
 class ResNet18FPNDetector(nn.Module):
+    """ResNet34-based FPN detector (name kept for checkpoint compatibility)."""
+
     def __init__(self, num_classes: int = 5, num_anchors: int = 3, fpn_ch: int = 256, pretrained: bool = True):
         super().__init__()
-        bb = resnet18(weights=ResNet18_Weights.DEFAULT if pretrained else None)
+        bb = resnet34(weights=ResNet34_Weights.DEFAULT if pretrained else None)
         self.stem = nn.Sequential(bb.conv1, bb.bn1, bb.relu, bb.maxpool)
         self.layer1 = bb.layer1   # stride 4,  64 ch
         self.layer2 = bb.layer2   # stride 8,  128 ch  → C3
